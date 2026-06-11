@@ -134,7 +134,7 @@ def get_price_board(symbol: str, source: str = "VCI"):
 def get_price_history(symbol: str, start: str, end: str, interval: str = "1D", source: str = DEFAULT_SOURCE):
     try:
         from vnstock.api.quote import Quote
-        q = Quote(symbol=symbol.upper(), source=source)
+        q = Quote(symbol=symbol.upper(), source=source, random_agent=True)
         df = q.history(start=start, end=end, interval=interval)
         return (df, None) if df is not None and not df.empty else (None, "Không có dữ liệu giá.")
     except Exception as e:

@@ -24,7 +24,7 @@ def vnindex_trend(source="VCI"):
         end = datetime.now().strftime("%Y-%m-%d")
         start = (datetime.now() - timedelta(days=400)).strftime("%Y-%m-%d")
         # VNINDEX là mã chỉ số
-        q = Quote(symbol="VNINDEX", source=source)
+        q = Quote(symbol="VNINDEX", source=source, random_agent=True)
         df = q.history(start=start, end=end, interval="1D")
         if df is None or df.empty:
             out["err"] = "Không lấy được VN-Index."; return out
