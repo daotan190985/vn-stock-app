@@ -32,27 +32,41 @@ STATUS_ORDER = {"VAO": 0, "CHO": 1, "THEODOI": 2, "TRANH": 3}
 
 
 def _fetch_raw(sym, period, source):
-    """Gọi vnstock trực tiếp (không qua st.cache để an toàn khi đa luồng)."""
-    out = {"ratio": None, "hist": None, "err": None}
+    """VNDirect là chính (giá ổn định, chỉ số best-effort); vnstock dự phòng. An toàn đa luồng."""
+    import vndirect as VND
+    out = {"ratio": None, "hist": None, "err": None, "src": "VNDirect"}
     end = datetime.now().strftime("%Y-%m-%d")
     start = (datetime.now() - timedelta(days=320)).strftime("%Y-%m-%d")
-    try:
-        from vnstock.api.financial import Finance
-        f = Finance(source=source, symbol=sym.upper(), period=period)
-        out["ratio"] = f.ratio(lang="en", dropna=False)
-    except Exception as e:
-        out["err"] = f"ratio: {type(e).__name__}"
-    try:
-        from vnstock.api.quote import Quote
-        q = Quote(symbol=sym.upper(), source=source, random_agent=True)
-        out["hist"] = q.history(start=start, end=end, interval="1D")
-    except Exception as e:
-        out["err"] = (out["err"] or "") + f" | hist: {type(e).__name__}"
+
+    # --- giá: VNDirect dchart (chính) -> vnstock (phụ) ---
+    out["hist"] = VND.vnd_history(sym, start, end)
+    if out["hist"] is None:
+        try:
+            from vnstock.api.quote import Quote
+            q = Quote(symbol=sym.upper(), source=source, random_agent=True)
+            h = q.history(start=start, end=end, interval="1D")
+            if h is not None and not h.empty:
+                out["hist"] = h; out["src"] = "vnstock"
+        except Exception as e:
+            out["err"] = f"hist: {type(e).__name__}"
+
+    # --- chỉ số: VNDirect finfo (best-effort) -> vnstock (phụ) ---
+    out["ratio"] = VND.vnd_ratios_df(sym)
+    if out["ratio"] is None:
+        try:
+            from vnstock.api.financial import Finance
+            f = Finance(source=source, symbol=sym.upper(), period=period)
+            r = f.ratio(lang="en", dropna=False)
+            if r is not None and not r.empty:
+                out["ratio"] = r
+        except Exception:
+            pass
     return out
 
 
 def _process(sym, raw, favored_sectors):
     """Tính toán nhẹ (CPU) từ dữ liệu thô — không gọi mạng."""
+    import fundamentals as FUND
     favored_sectors = favored_sectors or set()
     row = {"Mã": sym, "Ngành": sector_of(sym), "status": "THEODOI",
            "Trạng thái": "", "Điểm CB": None, "Setup": "", "RSI": None,
@@ -61,10 +75,15 @@ def _process(sym, raw, favored_sectors):
     if raw.get("err"):
         row["_err"].append(raw["err"])
     try:
+        # chỉ số: ưu tiên live (VNDirect/vnstock); thiếu -> đọc cache fundamentals.json
         cur, _ = A.extract_metrics(raw.get("ratio"))
-        # điểm rút gọn cho bảng: chỉ dùng sinh lời + sức khỏe + định giá (bỏ growth/cf)
-        sc = A.score_stock(cur, {}, {})
-        warns = A.detect_warnings(cur, {}, {})
+        if not cur or all(v is None for v in cur.values()):
+            cur = FUND.get_metrics(sym)
+        growth = FUND.get_growth(sym)
+        cf = FUND.get_cashflow(sym)
+
+        sc = A.score_stock(cur, growth, cf)
+        warns = A.detect_warnings(cur, growth, cf)
         setup = MK.entry_setup(raw.get("hist"))
 
         row["Điểm CB"] = sc["total"]
