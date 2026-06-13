@@ -67,6 +67,10 @@ with st.sidebar:
     period = st.radio("Kỳ BCTC", ["quarter","year"],
                       format_func=lambda x:"Quý" if x=="quarter" else "Năm", horizontal=True)
     source = "VCI"
+    st.markdown("**Bộ lọc thanh khoản thị trường**")
+    liq_threshold = st.number_input("Ngưỡng HOSE khỏe (tỷ đồng)", value=15000, step=1000)
+    avg_price_k = st.number_input("Giá bình quân/cp (nghìn đồng) — chỉnh cho khớp broker",
+                                  value=21.0, step=0.5)
     st.markdown("---")
     scan = st.button("🔍 QUÉT THỊ TRƯỜNG", type="primary", use_container_width=True)
     st.caption(f"📅 Chỉ số cơ bản cập nhật: **{FUND.updated_date()}**")
@@ -91,6 +95,22 @@ with tab_desk:
     c3.metric("MA200", f"{vi['ma200']:,.1f}" if vi['ma200'] else "—")
     c4.metric("Xu hướng TT", vi['trend'] or "—")
     st.caption(f"Giai đoạn: {phase} · Ngành gió thuận: {', '.join(sorted(favored)) if favored else '—'}")
+
+    # --- Thanh khoản thị trường ---
+    liq = MC.hose_liquidity(avg_price_k)
+    market_ok = True
+    if liq.get("value_ty") is not None:
+        market_ok = liq["value_ty"] >= liq_threshold
+        icon = "✅ khỏe" if market_ok else "⚠️ yếu"
+        l1, l2, l3 = st.columns(3)
+        l1.metric("Thanh khoản HOSE (ước)", f"{liq['value_ty']:,.0f} tỷ", icon)
+        l2.metric("Khối lượng khớp", f"{liq['vol_shares']/1e6:,.0f} tr cp" if liq['vol_shares'] else "—")
+        l3.metric("So TB 20 phiên", f"{liq['vs_avg20_pct']:,.0f}%" if liq['vs_avg20_pct'] else "—")
+        if not market_ok:
+            st.warning(f"Thanh khoản HOSE ~{liq['value_ty']:,.0f} tỷ < ngưỡng {liq_threshold:,.0f} tỷ "
+                       "→ thị trường yếu, mọi tín hiệu ĐIỂM VÀO bị hạ xuống CHỜ.")
+    else:
+        st.caption(f"(Chưa tính được thanh khoản: {liq.get('err','')})")
     st.divider()
 
     st.subheader("🖥️ Danh sách theo dõi & trạng thái điểm vào")
@@ -99,6 +119,7 @@ with tab_desk:
         prog = st.progress(0.0, text="Bắt đầu quét…")
         def cb(p, sym): prog.progress(p, text=f"Đang quét {sym} ({int(p*100)}%)")
         rows = SC.run_screen(symbols, period, source, favored, progress_cb=cb)
+        rows = SC.apply_market_filter(rows, market_ok)
         prog.empty()
         st.session_state["scan_rows"] = rows
 

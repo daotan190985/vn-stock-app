@@ -110,6 +110,19 @@ def rank_key(row):
     return (st, -wind, -cb)
 
 
+def apply_market_filter(rows, market_ok):
+    """Khi thị trường thanh khoản YẾU (market_ok=False): hạ mọi VAO -> CHO."""
+    if market_ok:
+        return rows
+    for r in rows:
+        if r.get("status") == "VAO":
+            r["status"] = "CHO"
+            r["Trạng thái"] = STATUS_LABEL["CHO"]
+            r["Setup"] = "TT thanh khoản yếu (<ngưỡng) — không vào, chờ thị trường khỏe. | " + (r.get("Setup") or "")
+    rows.sort(key=rank_key)
+    return rows
+
+
 def run_screen(symbols, period, source, favored_sectors=None, progress_cb=None, max_workers=8):
     """Quét song song. Trả danh sách row đã xếp hạng."""
     favored_sectors = favored_sectors or set()

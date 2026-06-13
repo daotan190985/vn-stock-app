@@ -32,6 +32,34 @@ def vnindex_trend(source="VCI"):
     return out
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def hose_liquidity(avg_price_k=21.0):
+    """Ước lượng thanh khoản HOSE phiên gần nhất.
+    Lấy tổng KHỐI LƯỢNG từ VNINDEX (dchart, chính xác), quy ra tỷ đồng
+    bằng giá bình quân (nghìn đồng/cp). Kèm KL so với TB20 (chính xác).
+    Trả: {vol_shares, value_ty (ước lượng), vs_avg20_pct, err}"""
+    out = {"vol_shares": None, "value_ty": None, "vs_avg20_pct": None, "err": None}
+    try:
+        from datetime import datetime, timedelta
+        end = datetime.now().strftime("%Y-%m-%d")
+        start = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
+        df = VND.vnd_history("VNINDEX", start, end)
+        if df is None or df.empty or "volume" not in df.columns:
+            out["err"] = "Không lấy được KL VNINDEX."; return out
+        vol = pd.to_numeric(df["volume"], errors="coerce").dropna()
+        last_vol = float(vol.iloc[-1])
+        out["vol_shares"] = last_vol
+        # quy ra ty dong: KL(cp) * gia_bq(nghin dong) / 1e9 * 1000 = KL*gia_bq/1e6
+        out["value_ty"] = round(last_vol * avg_price_k / 1e6, 0)
+        if len(vol) >= 20:
+            avg20 = vol.iloc[-21:-1].mean()
+            if avg20 > 0:
+                out["vs_avg20_pct"] = round(last_vol / avg20 * 100, 0)
+    except Exception as e:
+        out["err"] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def favored_sectors_for_phase(phase_key):
     info = S.ECONOMIC_PHASES.get(phase_key, {})
     favored = set()

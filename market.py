@@ -288,6 +288,12 @@ def entry_setup(hist_df, board=None):
         out["status"] = "CHO"
         return out
 
+    # 7) THANH KHOẢN MÃ CẠN: pullback đẹp nhưng KL < 0.5x TB20 -> chưa vào, chờ dòng tiền
+    if setup_score >= 2 and vratio is not None and vratio < 0.5:
+        out["reasons"].insert(0, f"Thanh khoản cạn (×{vratio:.1f} TB20) — chưa có dòng tiền xác nhận, hạ xuống CHỜ.")
+        out["status"] = "CHO"
+        return out
+
     # Kết luận
     if setup_score >= 2:
         out["status"] = "VAO"
