@@ -18,6 +18,7 @@ import screener as SC
 import macro as MC
 import vndirect as VND
 import fundamentals as FUND
+import ecosystem as ECO
 
 st.set_page_config(page_title="VN Stock Analyst Desk", layout="wide", page_icon="📊")
 st.markdown("""
@@ -255,6 +256,49 @@ with tab_detail:
                         ic="🔴" if w["level"]=="high" else "🟠" if w["level"]=="medium" else "🟡"
                         st.write(ic,w["msg"])
                 else: st.write("Không có cảnh báo nghiêm trọng.")
+        # --- NHẬN ĐỊNH TỔNG HỢP ---
+        st.markdown("---")
+        st.markdown("### 🧭 Nhận định tổng hợp")
+        eco_name, eco_desc = ECO.get_ecosystem(sym)
+        div = FUND.get_dividend(sym)
+
+        cN1, cN2 = st.columns(2)
+        with cN1:
+            st.markdown("**🏛️ Nền tảng & hệ sinh thái**")
+            if eco_name:
+                st.write(f"• Hệ **{eco_name}**: {eco_desc}")
+            else:
+                st.write("• Chưa gắn hệ sinh thái (bổ sung trong ecosystem.py).")
+            if cur and any(v is not None for v in (cur or {}).values()):
+                roe = cur.get("roe"); de = cur.get("de")
+                if roe is not None:
+                    tag = "khỏe" if roe >= 15 else "trung bình" if roe >= 8 else "yếu"
+                    st.write(f"• Sinh lời: ROE {roe:.1f}% ({tag})")
+                if de is not None:
+                    tag = "an toàn" if de <= 0.7 else "chấp nhận" if de <= 1.5 else "đòn bẩy cao"
+                    st.write(f"• Tài chính: Nợ/VCSH {de:.2f} ({tag})")
+            else:
+                st.write("• Chỉ số cơ bản: chưa có (chạy cập nhật).")
+        with cN2:
+            st.markdown("**💰 Cổ tức / sự kiện**")
+            if div:
+                st.write(f"• Mới nhất ({div.get('ngay','')}): {div.get('moi','')}")
+                for ln in div.get("lines", [])[1:3]:
+                    st.write(f"  – {ln['ngay']}: {ln['noi_dung']}")
+            else:
+                st.write("• Chưa có dữ liệu cổ tức (chạy cập nhật trên máy).")
+
+        st.markdown("**📈 Triển vọng & dự báo kỹ thuật:**")
+        prospect = []
+        if setup.get("trend"): prospect.append(f"Xu hướng {setup['trend'].lower()}")
+        if setup.get("adx_text"): prospect.append(setup["adx_text"])
+        if wz:
+            za = setup.get("zone_alert","")
+            prospect.append(f"Vùng canh vào {wz['low']:,.2f}–{wz['high']:,.2f} {za}")
+        st.write("• " + " · ".join(prospect) if prospect else "• Chưa đủ dữ liệu.")
+        st.write(f"• **Kết luận:** {rec_badge(label)} (điểm {sc['total']}/100, tin cậy {conf})",
+                 unsafe_allow_html=True)
+
         st.caption(DISCLAIMER)
 
 with tab_sector:

@@ -55,6 +55,15 @@ def get_cashflow(symbol):
             "fcf_latest": d.get("fcf_latest"), "notes": []}
 
 
+def get_dividend(symbol):
+    """Cổ tức từ cache: {co_tuc_moi, co_tuc_ngay, co_tuc_lines} hoặc {}."""
+    d = load_all().get(symbol.upper()) or {}
+    if d.get("co_tuc_moi"):
+        return {"moi": d.get("co_tuc_moi"), "ngay": d.get("co_tuc_ngay"),
+                "lines": d.get("co_tuc_lines", [])}
+    return {}
+
+
 def has_data():
     c = load_all()
     return len([k for k in c.keys() if not k.startswith("_")]) > 0

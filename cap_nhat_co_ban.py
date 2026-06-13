@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-CẬP NHẬT CHỈ SỐ CƠ BẢN — chạy trên MÁY VN (nhà/công ty), nơi finfo/vnstock chạy được.
-Tạo file fundamentals.json để app trên cloud đọc.
+CAP NHAT DU LIEU CO BAN — chay tren MAY VN (Python co vnstock).
+Lay: chi so tai chinh (vnstock) + co tuc (Vietstock) cho ~70 ma.
+Tao file fundamentals.json de cloud doc.
 
-CHẠY:
-    py -3.12 cap_nhat_co_ban.py
-Sau đó đẩy lên GitHub (DAY_LEN.bat hoặc git push) để cloud cập nhật.
-
-Chỉ cần chạy MỖI QUÝ MỘT LẦN (chỉ số tài chính theo quý).
-Thử 2 nguồn: VNDirect finfo trước, vnstock sau.
+CHAY (dung python co vnstock, vi du Python 3.11):
+    python cap_nhat_co_ban.py
+Sau do day len GitHub (git add/commit/push hoac DAY_LEN.bat).
+Chi can chay MOI QUY 1 LAN (hoac khi muon cap nhat co tuc).
 """
-import json, time, sys
+import warnings; warnings.filterwarnings("ignore")
+import json, time, re
+from io import StringIO
 from datetime import datetime
 import requests
 
-# danh sách mã (đồng bộ với universe.py)
 VN30 = ["ACB","BCM","BID","BVH","CTG","FPT","GAS","GVR","HDB","HPG",
         "MBB","MSN","MWG","PLX","POW","SAB","SHB","SSB","SSI","STB",
         "TCB","TPB","VCB","VHM","VIB","VIC","VJC","VNM","VPB","VRE"]
@@ -24,87 +24,97 @@ MIDCAP = ["DGC","DCM","DPM","KDH","NLG","PDR","DXG","KBC","IDC","SZC",
           "HCM","CTD","HHV","VCG","GEX","DBC","ANV","VHC","FTS","CMG"]
 SYMBOLS = VN30 + MIDCAP
 
-H = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36",
-     "Accept":"application/json, text/plain, */*",
-     "Referer":"https://dstock.vndirect.com.vn/"}
+_H = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/131.0 Safari/537.36",
+      "Accept":"text/html,application/xhtml+xml,*/*;q=0.8",
+      "Referer":"https://finance.vietstock.vn/"}
 
-RATIO_CODES = {
-    "ROE":"roe","ROA":"roa","PRICE_TO_EARNINGS":"pe","PRICE_TO_BOOK":"pb",
-    "NET_PROFIT_MARGIN":"net_margin","GROSS_PROFIT_MARGIN":"gross_margin",
-    "DEBT_ON_EQUITY":"de","CURRENT_RATIO":"current_ratio",
-}
 
-def from_vndirect(sym, tries=4):
-    """Lấy chỉ số từ finfo. Trên IP người thật (VN) thường chạy."""
-    url=(f"https://finfo-api.vndirect.com.vn/v4/ratios?q=code:{sym}~reportType:QUARTER"
-         "&sort=reportDate&size=40")
-    for i in range(tries):
-        try:
-            r=requests.get(url,headers=H,timeout=12)
-            if r.status_code==200:
-                data=r.json().get("data",[])
-                if not data: return None
-                out={}
-                for it in data:
-                    code=it.get("ratioCode"); val=it.get("value")
-                    if code in RATIO_CODES and RATIO_CODES[code] not in out and val is not None:
-                        key=RATIO_CODES[code]
-                        if key in ("roe","roa","net_margin","gross_margin") and abs(val)<5:
-                            val=val*100
-                        out[key]=round(float(val),2)
-                return out or None
-            if r.status_code in (429,502,503,504):
-                time.sleep(1.5*(i+1)); continue
-            return None
-        except Exception:
-            time.sleep(1.5*(i+1))
-    return None
-
-def from_vnstock(sym):
-    """Dự phòng: dùng vnstock (nếu đã cài trên máy)."""
+def get_ratios_vnstock(sym):
+    """Chi so tai chinh tu vnstock. Tra dict hoac {}."""
     try:
-        from vnstock.api.financial import Finance
-        f=Finance(source="VCI",symbol=sym,period="quarter")
-        df=f.ratio(lang="en",dropna=False)
-        if df is None or df.empty: return None
-        # đọc cột linh hoạt
-        def pick(cands):
-            cols={(" ".join(map(str,c)) if isinstance(c,tuple) else str(c)).lower():c for c in df.columns}
+        from vnstock import Vnstock
+        st = Vnstock().stock(symbol=sym, source="VCI")
+        df = st.finance.ratio(period="quarter", lang="en", dropna=False)
+        if df is None or df.empty:
+            return {}
+        row = df.iloc[-1]
+        cols = {(" ".join(map(str,c)) if isinstance(c,tuple) else str(c)).lower(): c
+                for c in df.columns}
+        def g(*cands):
             for cand in cands:
                 for k,o in cols.items():
-                    if cand in k: return o
+                    if cand in k:
+                        try:
+                            v = float(row[o])
+                            return round(v,2)
+                        except: pass
             return None
-        row=df.iloc[-1]
-        def g(cands):
-            c=pick(cands)
-            try: return round(float(row[c]),2) if c is not None else None
-            except: return None
-        return {"roe":g(["roe"]),"roa":g(["roa"]),"pe":g(["p/e","pe"]),"pb":g(["p/b","pb"]),
-                "net_margin":g(["net profit margin","net margin"]),
-                "gross_margin":g(["gross profit margin","gross margin"]),
-                "de":g(["debt/equity","debt to equity"]),
-                "current_ratio":g(["current ratio"])}
+        out = {"roe":g("roe"),"roa":g("roa"),
+               "pe":g("p/e","pe"),"pb":g("p/b","pb"),
+               "net_margin":g("net profit margin","post-tax"),
+               "gross_margin":g("gross profit margin","gross margin"),
+               "de":g("debt/equity","debt to equity","liabilities/equity"),
+               "current_ratio":g("current ratio")}
+        # roe/roa/margin co the la ti le -> %
+        for k in ("roe","roa","net_margin","gross_margin"):
+            if out.get(k) is not None and abs(out[k]) < 5:
+                out[k] = round(out[k]*100,2)
+        return {k:v for k,v in out.items() if v is not None}
+    except Exception as e:
+        return {}
+
+
+def get_dividend_vietstock(sym):
+    """Co tuc moi nhat tu Vietstock (read_html). Tra dict hoac {}."""
+    try:
+        import pandas as pd
+        from bs4 import BeautifulSoup
+        url = f"https://finance.vietstock.vn/{sym}/co-tuc.htm"
+        r = requests.get(url, headers=_H, timeout=15)
+        r.raise_for_status()
+        soup = BeautifulSoup(r.text, "html.parser")
+        table = soup.find("table", class_=lambda x: x and "table" in x)
+        if not table:
+            return {}
+        df = pd.read_html(StringIO(str(table)))[0]
+        if df.empty:
+            return {}
+        lines = []
+        for _, rr in df.head(5).iterrows():
+            d = str(rr.iloc[0]).strip()
+            c = str(rr.iloc[1]).strip() if len(rr) > 1 else ""
+            if c and c != "nan":
+                lines.append({"ngay": d, "noi_dung": c[:160]})
+        if not lines:
+            return {}
+        return {"co_tuc_moi": lines[0]["noi_dung"], "co_tuc_ngay": lines[0]["ngay"],
+                "co_tuc_lines": lines}
     except Exception:
-        return None
+        return {}
+
 
 def main():
-    result={"_updated":datetime.now().strftime("%Y-%m-%d %H:%M")}
-    ok=0; fail=[]
-    print(f"Cap nhat chi so cho {len(SYMBOLS)} ma...\n")
-    for i,sym in enumerate(SYMBOLS,1):
-        m=from_vndirect(sym) or from_vnstock(sym)
-        if m:
-            result[sym]=m; ok+=1
-            print(f"  [{i}/{len(SYMBOLS)}] {sym}: OK (ROE={m.get('roe')} PE={m.get('pe')})")
-        else:
-            fail.append(sym)
-            print(f"  [{i}/{len(SYMBOLS)}] {sym}: khong lay duoc")
-        time.sleep(0.3)
-    with open("fundamentals.json","w",encoding="utf-8") as f:
-        json.dump(result,f,ensure_ascii=False,indent=1)
-    print(f"\nXONG: {ok} ma OK, {len(fail)} ma loi.")
-    if fail: print("Loi:", ", ".join(fail))
-    print("Da ghi fundamentals.json. Gio chay DAY_LEN.bat (hoac git push) de day len cloud.")
+    result = {"_updated": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    ok_r = ok_d = 0
+    n = len(SYMBOLS)
+    print(f"Cap nhat {n} ma (chi so + co tuc)...\n")
+    for i, sym in enumerate(SYMBOLS, 1):
+        rec = {}
+        r = get_ratios_vnstock(sym)
+        if r: rec.update(r); ok_r += 1
+        d = get_dividend_vietstock(sym)
+        if d: rec.update(d); ok_d += 1
+        if rec:
+            result[sym] = rec
+        tag_r = f"ROE={r.get('roe')}" if r else "chi so X"
+        tag_d = "co tuc OK" if d else "co tuc X"
+        print(f"  [{i}/{n}] {sym}: {tag_r} | {tag_d}")
+        time.sleep(0.4)
+    with open("fundamentals.json", "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=1)
+    print(f"\nXONG: {ok_r} ma co chi so, {ok_d} ma co co tuc.")
+    print("Da ghi fundamentals.json. Gio day len GitHub (DAY_LEN.bat hoac git push).")
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()
