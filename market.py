@@ -355,8 +355,24 @@ def entry_setup(hist_df, board=None):
         out["confluence"] = confl
         d_strg, *_ = IND.trend_strength(d)
         out["adx_text"] = d_strg
+
+        # --- VÙNG CHỜ + cảnh báo chạm vùng ---
+        wz = IND.wait_zone(hist_df, lookback=120)
+        out["wait_zone"] = wz
+        if wz:
+            if wz["low"] <= last <= wz["high"]:
+                out["zone_alert"] = "🎯 ĐÃ VỀ VÙNG CHỜ"
+                out["reasons"].insert(0,
+                    f"🎯 Giá {last:,.2f} ĐÃ vào vùng chờ {wz['low']:,.2f}–{wz['high']:,.2f} "
+                    f"({'+'.join(wz['factors'])}) — kiểm tra hội tụ để vào.")
+            elif last > wz["high"]:
+                out["zone_alert"] = "⏳ chờ chỉnh về vùng"
+                out["reasons"].append(
+                    f"⏳ Vùng chờ vào: {wz['low']:,.2f}–{wz['high']:,.2f} "
+                    f"({'+'.join(wz['factors'])}) — giá đang trên vùng, đặt lệnh chờ ở đó.")
     except Exception:
         out["confluence"] = []
         out["adx_text"] = ""
+        out["wait_zone"] = None
 
     return out

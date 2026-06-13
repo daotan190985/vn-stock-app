@@ -71,7 +71,7 @@ def _process(sym, raw, favored_sectors):
     row = {"Mã": sym, "Ngành": sector_of(sym), "status": "THEODOI",
            "Trạng thái": "", "Điểm CB": None, "Setup": "", "RSI": None,
            "Xu hướng": "", "Giá": None, "P/E": None, "ROE%": None,
-           "Cảnh báo": 0, "Gió ngành": "", "_err": []}
+           "Cảnh báo": 0, "Gió ngành": "", "Vùng chờ": "", "Vùng": "", "_err": []}
     if raw.get("err"):
         row["_err"].append(raw["err"])
     try:
@@ -95,6 +95,12 @@ def _process(sym, raw, favored_sectors):
         row["Cảnh báo"] = len(warns)
         row["status"] = setup.get("status", "THEODOI")
         row["Setup"] = setup["reasons"][0] if setup.get("reasons") else ""
+        # Vùng chờ + cảnh báo chạm vùng
+        wz = setup.get("wait_zone")
+        if wz:
+            row["Vùng chờ"] = f"{wz['low']:,.2f}–{wz['high']:,.2f}"
+            if setup.get("zone_alert"):
+                row["Vùng"] = setup["zone_alert"]
         if row["Ngành"] in favored_sectors:
             row["Gió ngành"] = "✅ thuận"
         row["Trạng thái"] = STATUS_LABEL.get(row["status"], "")

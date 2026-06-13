@@ -130,7 +130,7 @@ with tab_desk:
             ["🟢 ĐIỂM VÀO","🟡 CHỜ ĐIỂM VÀO","🔵 THEO DÕI","🔴 TRÁNH"],
             default=["🟢 ĐIỂM VÀO","🟡 CHỜ ĐIỂM VÀO"])
         view = df[df["Trạng thái"].isin(only)] if only else df
-        cols = [c for c in ["Mã","Trạng thái","Ngành","Gió ngành","Điểm CB","Xu hướng",
+        cols = [c for c in ["Mã","Trạng thái","Vùng","Vùng chờ","Ngành","Gió ngành","Điểm CB","Xu hướng",
                 "RSI","P/E","ROE%","Cảnh báo","Giá","Setup"] if c in view.columns]
         st.dataframe(view[cols], hide_index=True, use_container_width=True, height=520)
         n_vao=(df["status"]=="VAO").sum(); n_cho=(df["status"]=="CHO").sum()
@@ -174,6 +174,11 @@ with tab_detail:
         st.caption("Giá đơn vị nghìn đồng (theo VNDirect). Tham chiếu = đóng cửa phiên trước.")
 
         st.markdown("**🎯 Điểm vào lệnh:** "+SC.STATUS_LABEL.get(setup["status"],"—"))
+        wz = setup.get("wait_zone")
+        if wz:
+            za = setup.get("zone_alert", "")
+            st.markdown(f"**📍 Vùng chờ vào: `{wz['low']:,.2f} – {wz['high']:,.2f}`** "
+                        f"({' + '.join(wz['factors'])}) {za}")
         for r in setup["reasons"]: st.write("•", r)
         if setup.get("adx_text"):
             st.caption("📊 " + setup["adx_text"])
@@ -188,13 +193,29 @@ with tab_detail:
         try:
             import indicators as IND
             import charts as CH
-            d_ind = IND.add_indicators(hist)
-            fib = IND.fibonacci_levels(hist, lookback=120)
-            fig = CH.build_chart(d_ind, fib, title=f"{sym} — Khung Ngày (D1)")
+            cc1, cc2 = st.columns([1, 3])
+            with cc1:
+                tf = st.radio("Khung", ["Ngày (D1)", "Tuần (W1)"], horizontal=False)
+            with cc2:
+                st.caption("Bật/tắt chỉ báo:")
+                tg1, tg2, tg3, tg4, tg5 = st.columns(5)
+                show_ema = tg1.checkbox("EMA", value=True)
+                show_macd = tg2.checkbox("MACD", value=True)
+                show_stoch = tg3.checkbox("Stoch", value=True)
+                show_adx = tg4.checkbox("ADX", value=True)
+                show_fib = tg5.checkbox("Fibo", value=True)
+
+            src = IND.weekly_resample(hist) if tf.startswith("Tuần") else hist
+            d_ind = IND.add_indicators(src)
+            fib = IND.fibonacci_levels(src, lookback=120) if show_fib else None
+            fig = CH.build_chart(d_ind, fib, title=f"{sym} — {tf}",
+                                 show_ema=show_ema, show_macd=show_macd,
+                                 show_stoch=show_stoch, show_adx=show_adx)
             st.plotly_chart(fig, use_container_width=True,
-                            config={"scrollZoom": True, "displayModeBar": True})
+                            config={"scrollZoom": True, "displayModeBar": True,
+                                    "responsive": True})
         except Exception as e:
-            st.caption(f"(Chưa vẽ được biểu đồ: {type(e).__name__})")
+            st.caption(f"(Chưa vẽ được biểu đồ: {type(e).__name__}: {e})")
 
         with st.expander("📉 Biểu đồ TradingView (phụ)"):
             tradingview_widget(sym, exchange)
