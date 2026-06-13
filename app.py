@@ -48,7 +48,7 @@ def tradingview_widget(symbol, exchange="HOSE"):
     <script src="https://s3.tradingview.com/tv.js"></script>
     <script>new TradingView.widget({{"width":"100%","height":480,
     "symbol":"{ex}:{symbol.upper()}","interval":"D","timezone":"Asia/Ho_Chi_Minh",
-    "theme":"dark","style":"1","locale":"vi_VN","allow_symbol_change":true,
+    "theme":"dark","style":"1","locale":"vi_VN","allow_symbol_change":false,
     "container_id":"tv_{symbol}"}});</script></div>"""
     st.components.v1.html(html, height=500)
 
@@ -208,16 +208,22 @@ with tab_detail:
             src = IND.weekly_resample(hist) if tf.startswith("Tuần") else hist
             d_ind = IND.add_indicators(src)
             fib = IND.fibonacci_levels(src, lookback=120) if show_fib else None
+            wz_chart = setup.get("wait_zone")
             fig = CH.build_chart(d_ind, fib, title=f"{sym} — {tf}",
                                  show_ema=show_ema, show_macd=show_macd,
-                                 show_stoch=show_stoch, show_adx=show_adx)
+                                 show_stoch=show_stoch, show_adx=show_adx,
+                                 wait_zone=wz_chart)
             st.plotly_chart(fig, use_container_width=True,
                             config={"scrollZoom": True, "displayModeBar": True,
                                     "responsive": True})
+            st.caption("📊 Biểu đồ trên là **giá chuẩn (VNDirect)** — mọi phân tích/điểm vào dựa trên dữ liệu này. "
+                       "Đường gạch trắng = giá hiện tại, dải xanh = vùng chờ.")
         except Exception as e:
             st.caption(f"(Chưa vẽ được biểu đồ: {type(e).__name__}: {e})")
 
-        with st.expander("📉 Biểu đồ TradingView (phụ)"):
+        with st.expander("📉 Biểu đồ TradingView (phụ — khóa mã HOSE)"):
+            st.caption("⚠️ TradingView chỉ để tham khảo. Nếu hiện sai mã (trùng tên với cổ phiếu nước ngoài), "
+                       "hãy tin biểu đồ Plotly ở trên.")
             tradingview_widget(sym, exchange)
 
         if not cur or all(v is None for v in (cur or {}).values()):

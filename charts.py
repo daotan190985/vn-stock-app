@@ -12,7 +12,8 @@ GRID = "#222"
 
 
 def build_chart(d, fib=None, title="", height=None,
-                show_ema=True, show_macd=True, show_stoch=True, show_adx=True):
+                show_ema=True, show_macd=True, show_stoch=True, show_adx=True,
+                wait_zone=None):
     # quyết định các tầng phụ được bật
     sub = []
     if show_macd: sub.append("macd")
@@ -38,6 +39,24 @@ def build_chart(d, fib=None, title="", height=None,
         x=x, open=d["open"], high=d["high"], low=d["low"], close=d["close"],
         name="Giá", increasing_line_color="#26a69a", decreasing_line_color="#ef5350"),
         row=1, col=1)
+    # đường dóng giá hiện tại (giống TradingView)
+    try:
+        last_price = float(d["close"].iloc[-1])
+        fig.add_hline(y=last_price, line=dict(color="#e0e0e0", width=1, dash="dash"),
+                      row=1, col=1, annotation_text=f" {last_price:,.2f}",
+                      annotation_position="right",
+                      annotation_font=dict(size=11, color="#000"),
+                      annotation_bgcolor="#e0e0e0")
+    except Exception:
+        pass
+
+    # --- Vùng chờ (dải mờ) ---
+    if wait_zone and wait_zone.get("low") and wait_zone.get("high"):
+        fig.add_hrect(y0=wait_zone["low"], y1=wait_zone["high"],
+                      fillcolor="#2962ff", opacity=0.12, line_width=0, row=1, col=1,
+                      annotation_text=f"Vùng chờ {wait_zone['low']:,.2f}–{wait_zone['high']:,.2f}",
+                      annotation_position="top left",
+                      annotation_font=dict(size=10, color="#7da9ff"))
     if show_ema:
         if "ema200" in d:
             fig.add_trace(go.Scatter(x=x, y=d["ema200"], name="EMA200",
