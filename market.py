@@ -304,4 +304,59 @@ def entry_setup(hist_df, board=None):
     else:
         out["status"] = "THEODOI"
         out["reasons"].append("Đi ngang — chờ xác nhận xu hướng trước khi vào.")
+
+    # --- Bổ sung xác nhận đa chỉ báo (giống app vàng): MACD/Stoch/ADX/Fibo ---
+    try:
+        import indicators as IND
+        d = IND.add_indicators(hist_df)
+        fib = IND.fibonacci_levels(hist_df, lookback=120)
+        confl = []  # các xác nhận đồng thuận
+
+        macd_h = d["macd_hist"].dropna()
+        if len(macd_h) >= 2:
+            if macd_h.iloc[-1] > 0 and macd_h.iloc[-2] <= 0:
+                confl.append("MACD vừa cắt lên (histogram dương) — động lượng tăng.")
+            elif macd_h.iloc[-1] < 0 and macd_h.iloc[-2] >= 0:
+                confl.append("MACD vừa cắt xuống — động lượng yếu đi.")
+
+        kk = d["stoch_k"].dropna(); dd = d["stoch_d"].dropna()
+        if len(kk) >= 2 and len(dd) >= 2:
+            if kk.iloc[-1] < 20:
+                confl.append(f"Stochastic %K {kk.iloc[-1]:.0f} vùng quá bán — chờ bật.")
+            elif kk.iloc[-1] > 80:
+                confl.append(f"Stochastic %K {kk.iloc[-1]:.0f} vùng quá mua — thận trọng.")
+            if kk.iloc[-1] > dd.iloc[-1] and kk.iloc[-2] <= dd.iloc[-2]:
+                confl.append("Stochastic %K cắt lên %D — tín hiệu mua sớm.")
+
+        adx_v = d["adx"].dropna()
+        if len(adx_v) >= 1:
+            av = float(adx_v.iloc[-1])
+            dp = float(d["di_plus"].iloc[-1]); dm = float(d["di_minus"].iloc[-1])
+            if av >= 25 and dp > dm:
+                confl.append(f"ADX {av:.0f} + DI+>DI- — xu hướng tăng đủ mạnh.")
+            elif av < 20:
+                confl.append(f"ADX {av:.0f} — xu hướng yếu, tín hiệu kém tin cậy.")
+
+        # Fibo: cảnh báo đã tăng mạnh / đang ở vùng retrace đẹp
+        if fib and fib.get("levels"):
+            lv = fib["levels"]
+            near = None
+            for nm in ["0.382", "0.5", "0.618"]:
+                if nm in lv and abs(last - lv[nm]) / last < 0.02:
+                    near = nm; break
+            if near:
+                confl.append(f"Giá đang ở vùng Fibo {near} ({lv[near]:,.2f}) — vùng retrace đáng chú ý.")
+            # đã tăng tới sát đỉnh swing (gần Fib 0.0) -> đã tăng mạnh, không đu
+            if fib.get("uptrend") and last >= fib["high"] * 0.97:
+                confl.append("Giá đã chạy sát đỉnh sóng (đã tăng mạnh) — KHÔNG vào đuổi, chờ retrace về Fibo.")
+                if out["status"] == "VAO":
+                    out["status"] = "CHO"
+
+        out["confluence"] = confl
+        d_strg, *_ = IND.trend_strength(d)
+        out["adx_text"] = d_strg
+    except Exception:
+        out["confluence"] = []
+        out["adx_text"] = ""
+
     return out

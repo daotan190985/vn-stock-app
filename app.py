@@ -175,10 +175,28 @@ with tab_detail:
 
         st.markdown("**🎯 Điểm vào lệnh:** "+SC.STATUS_LABEL.get(setup["status"],"—"))
         for r in setup["reasons"]: st.write("•", r)
+        if setup.get("adx_text"):
+            st.caption("📊 " + setup["adx_text"])
+        if setup.get("confluence"):
+            st.markdown("**🔬 Xác nhận đa chỉ báo (MACD 24-52-14 · Stoch 42-5-3 · ADX · Fibonacci):**")
+            for cf in setup["confluence"]: st.write("  ▸", cf)
         st.info(f"**Trạng thái nến:** {status['summary']}")
         with st.expander("Tín hiệu kỹ thuật chi tiết"):
             for s in status["signals"]: st.write("•", s)
-        with st.expander("📉 Biểu đồ nến TradingView (Daily)"):
+
+        # --- Biểu đồ Plotly đa tầng (giống app vàng) ---
+        try:
+            import indicators as IND
+            import charts as CH
+            d_ind = IND.add_indicators(hist)
+            fib = IND.fibonacci_levels(hist, lookback=120)
+            fig = CH.build_chart(d_ind, fib, title=f"{sym} — Khung Ngày (D1)")
+            st.plotly_chart(fig, use_container_width=True,
+                            config={"scrollZoom": True, "displayModeBar": True})
+        except Exception as e:
+            st.caption(f"(Chưa vẽ được biểu đồ: {type(e).__name__})")
+
+        with st.expander("📉 Biểu đồ TradingView (phụ)"):
             tradingview_widget(sym, exchange)
 
         if not cur or all(v is None for v in (cur or {}).values()):
