@@ -71,7 +71,8 @@ def _process(sym, raw, favored_sectors):
     row = {"Mã": sym, "Ngành": sector_of(sym), "status": "THEODOI",
            "Trạng thái": "", "Điểm CB": None, "Setup": "", "RSI": None,
            "Xu hướng": "", "Giá": None, "P/E": None, "ROE%": None,
-           "Cảnh báo": 0, "Gió ngành": "", "Vùng chờ": "", "Vùng": "", "_err": []}
+           "Cảnh báo": 0, "Gió ngành": "", "Vùng chờ": "", "Vùng": "",
+           "%1M": None, "%3M": None, "%6M": None, "%YTD": None, "_err": []}
     if raw.get("err"):
         row["_err"].append(raw["err"])
     try:
@@ -104,6 +105,15 @@ def _process(sym, raw, favored_sectors):
         if row["Ngành"] in favored_sectors:
             row["Gió ngành"] = "✅ thuận"
         row["Trạng thái"] = STATUS_LABEL.get(row["status"], "")
+        # % thay đổi theo mốc thời gian
+        try:
+            import indicators as IND
+            pc = IND.pct_changes(raw.get("hist"))
+            if pc:
+                row["%1M"] = pc.get("1M"); row["%3M"] = pc.get("3M")
+                row["%6M"] = pc.get("6M"); row["%YTD"] = pc.get("YTD")
+        except Exception:
+            pass
     except Exception as ex:
         row["_err"].append(f"{type(ex).__name__}: {ex}")
     return row

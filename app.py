@@ -19,6 +19,7 @@ import macro as MC
 import vndirect as VND
 import fundamentals as FUND
 import ecosystem as ECO
+import storage as STORE
 
 st.set_page_config(page_title="VN Stock Analyst Desk", layout="wide", page_icon="📊")
 st.markdown("""
@@ -83,8 +84,9 @@ with st.sidebar:
     exchange = st.selectbox("Sàn (biểu đồ & trần/sàn)", ["HOSE","HNX","UPCOM"])
 
 favored = MC.favored_sectors_for_phase(phase)
-tab_desk, tab_detail, tab_sector = st.tabs(
-    ["🖥️ Bảng theo dõi & Điểm vào", "📈 Phân tích chi tiết", "🏭 Xu thế ngành"])
+tab_desk, tab_detail, tab_movers, tab_port, tab_sector = st.tabs(
+    ["🖥️ Bảng theo dõi & Điểm vào", "📈 Phân tích chi tiết",
+     "📊 Top tăng/giảm", "💼 Sổ mua thử", "🏭 Xu thế ngành"])
 
 with tab_desk:
     st.subheader("🌐 Bối cảnh vĩ mô")
@@ -132,10 +134,24 @@ with tab_desk:
             default=["🟢 ĐIỂM VÀO","🟡 CHỜ ĐIỂM VÀO"])
         view = df[df["Trạng thái"].isin(only)] if only else df
         cols = [c for c in ["Mã","Trạng thái","Vùng","Vùng chờ","Ngành","Gió ngành","Điểm CB","Xu hướng",
-                "RSI","P/E","ROE%","Cảnh báo","Giá","Setup"] if c in view.columns]
+                "RSI","%1M","%3M","%6M","%YTD","P/E","ROE%","Cảnh báo","Giá","Setup"] if c in view.columns]
         st.dataframe(view[cols], hide_index=True, use_container_width=True, height=520)
         n_vao=(df["status"]=="VAO").sum(); n_cho=(df["status"]=="CHO").sum()
         st.success(f"🟢 {n_vao} mã ĐIỂM VÀO · 🟡 {n_cho} mã CHỜ (tổng {len(df)} mã).")
+
+        # --- Lưu & xuất báo cáo ---
+        bC1, bC2, bC3 = st.columns(3)
+        csv = view[cols].to_csv(index=False).encode("utf-8-sig")
+        bC1.download_button("⬇️ Tải CSV (mở Excel)", csv,
+                            file_name=f"quet_thi_truong_{datetime.now():%Y%m%d_%H%M}.csv",
+                            mime="text/csv", use_container_width=True)
+        if bC2.button("💾 Lưu phiên quét này", use_container_width=True):
+            ok = STORE.save_scan(rows, meta={"phase": phase, "liq": liq.get("value_ty")})
+            st.toast("Đã lưu phiên quét." if ok else "Lưu thất bại.", icon="✅" if ok else "⚠️")
+        saved = STORE.load_scan()
+        if saved:
+            bC3.caption(f"📁 Phiên đã lưu: {saved.get('_saved','')}")
+
         st.caption("Xếp hạng: VÀO trước → gió ngành thuận → điểm cơ bản cao. " + DISCLAIMER)
         errs=[r for r in rows if r.get("_err")]
         if errs:
@@ -299,6 +315,136 @@ with tab_detail:
         st.write(f"• **Kết luận:** {rec_badge(label)} (điểm {sc['total']}/100, tin cậy {conf})",
                  unsafe_allow_html=True)
 
+        st.caption(DISCLAIMER)
+
+with tab_movers:
+    st.subheader("📊 Top tăng / giảm theo thời gian")
+    st.caption("Lọc nhóm mã GIẢM sâu để soi điểm vào (bắt đáy/canh pullback), "
+               "hoặc xem nhóm TĂNG mạnh để tránh đu đỉnh. Dữ liệu giá VNDirect.")
+    rows_m = st.session_state.get("scan_rows")
+    if not rows_m:
+        st.info("Bấm **QUÉT THỊ TRƯỜNG** ở tab đầu để có dữ liệu thống kê.")
+    else:
+        import pandas as _pd
+        dfm = _pd.DataFrame(rows_m)
+        period = st.radio("Mốc thời gian", ["%1M","%3M","%6M","%YTD"],
+                          format_func=lambda x: {"%1M":"1 tháng","%3M":"3 tháng",
+                          "%6M":"6 tháng","%YTD":"Từ đầu năm"}[x], horizontal=True)
+        if period in dfm.columns:
+            valid = dfm[dfm[period].notna()].copy()
+            valid[period] = _pd.to_numeric(valid[period], errors="coerce")
+            valid = valid.dropna(subset=[period])
+            show_cols = [c for c in ["Mã","Ngành","Trạng thái",period,"Vùng chờ","RSI","Giá"] if c in valid.columns]
+            up = valid.sort_values(period, ascending=False).head(15)
+            down = valid.sort_values(period, ascending=True).head(15)
+            n_up = (valid[period] > 0).sum(); n_down = (valid[period] < 0).sum()
+            m1, m2 = st.columns(2)
+            m1.metric(f"Số mã TĂNG ({period[1:]})", f"{n_up} mã")
+            m2.metric(f"Số mã GIẢM ({period[1:]})", f"{n_down} mã")
+            cU, cD = st.columns(2)
+            with cU:
+                st.markdown(f"**🔺 Top tăng mạnh ({period[1:]}) — cân nhắc tránh đu đỉnh**")
+                st.dataframe(up[show_cols], use_container_width=True, hide_index=True)
+            with cD:
+                st.markdown(f"**🔻 Top giảm sâu ({period[1:]}) — soi tìm điểm vào**")
+                st.dataframe(down[show_cols], use_container_width=True, hide_index=True)
+        else:
+            st.warning("Chưa có dữ liệu mốc này. Quét lại thị trường.")
+
+with tab_port:
+    st.subheader("💼 Sổ mua thử (test phương pháp)")
+    st.caption("Đánh dấu mã đã 'mua thử' — app lưu giá & ngày vào, lần sau tự tính lời/lỗ. "
+               "Test phương pháp như thật mà không mất tiền. (Lưu vào portfolio.json — tải về & push để giữ lâu.)")
+
+    # form thêm vị thế
+    with st.expander("➕ Thêm lệnh mua thử"):
+        f1, f2, f3, f4 = st.columns(4)
+        p_sym = f1.text_input("Mã", "").strip().upper()
+        p_price = f2.number_input("Giá mua (nghìn đồng)", min_value=0.0, value=0.0, step=0.1)
+        p_qty = f3.number_input("Số lượng (cp)", min_value=0, value=100, step=100)
+        p_note = f4.text_input("Ghi chú", "")
+        if st.button("Lưu lệnh mua thử"):
+            if p_sym and p_price > 0:
+                STORE.add_position(p_sym, p_price, p_qty, p_note)
+                st.toast(f"Đã thêm {p_sym} @ {p_price}", icon="✅")
+                st.rerun()
+            else:
+                st.warning("Nhập mã và giá mua hợp lệ.")
+
+    positions = STORE.load_portfolio()
+    if not positions:
+        st.info("Chưa có lệnh mua thử nào. Thêm ở mục trên.")
+    else:
+        # lấy giá hiện tại cho từng mã
+        cur_prices = {}
+        for p in positions:
+            try:
+                h = VND.vnd_history(p["sym"],
+                    (datetime.now()).strftime("%Y-%m-%d"), None) if False else None
+            except Exception:
+                h = None
+        # dùng giá từ phiên quét nếu có, else fetch nhanh
+        scan_rows = st.session_state.get("scan_rows") or []
+        price_map = {r["Mã"]: r.get("Giá") for r in scan_rows if r.get("Giá")}
+        for p in positions:
+            cur_prices[p["sym"]] = price_map.get(p["sym"])
+        # mã nào chưa có giá -> fetch
+        for p in positions:
+            if cur_prices.get(p["sym"]) is None:
+                try:
+                    px = VND.last_price(p["sym"])
+                    cur_prices[p["sym"]] = px
+                except Exception:
+                    pass
+
+        enriched, summary = STORE.compute_pnl(positions, cur_prices)
+
+        # --- Dashboard tổng quan ---
+        d1, d2, d3 = st.columns(3)
+        d1.metric("Tổng vốn (nghìn đ)", f"{summary['total_cost']:,.0f}")
+        d2.metric("Giá trị hiện tại", f"{summary['total_value']:,.0f}")
+        d3.metric("Lời/Lỗ", f"{summary['total_pnl']:,.0f}",
+                  f"{summary['total_pnl_pct']:+.1f}%")
+
+        import pandas as _pd
+        dfp = _pd.DataFrame(enriched)
+        # biểu đồ lời/lỗ theo mã
+        try:
+            import plotly.graph_objects as go
+            valid = dfp[dfp["pnl_pct"].notna()]
+            if not valid.empty:
+                colors = ["#26a69a" if v >= 0 else "#ef5350" for v in valid["pnl_pct"]]
+                fig = go.Figure(go.Bar(x=valid["sym"], y=valid["pnl_pct"],
+                                marker_color=colors,
+                                text=[f"{v:+.1f}%" for v in valid["pnl_pct"]],
+                                textposition="outside"))
+                fig.update_layout(template="plotly_dark", height=300,
+                    title="Lời/Lỗ theo mã (%)", paper_bgcolor="#0e1117",
+                    plot_bgcolor="#0e1117", margin=dict(l=10,r=10,t=40,b=10),
+                    yaxis_title="%")
+                st.plotly_chart(fig, use_container_width=True)
+        except Exception:
+            pass
+
+        # bảng chi tiết
+        show = dfp.rename(columns={"sym":"Mã","entry":"Giá mua","current":"Giá hiện tại",
+                "qty":"SL","pnl_pct":"Lời/Lỗ %","pnl_value":"Lời/Lỗ (ngđ)",
+                "date":"Ngày mua","note":"Ghi chú"})
+        show_cols = [c for c in ["Mã","Ngày mua","Giá mua","Giá hiện tại","SL",
+                     "Lời/Lỗ %","Lời/Lỗ (ngđ)","Ghi chú"] if c in show.columns]
+        st.dataframe(show[show_cols], hide_index=True, use_container_width=True)
+
+        # xuất + xóa
+        e1, e2 = st.columns(2)
+        csv_p = show[show_cols].to_csv(index=False).encode("utf-8-sig")
+        e1.download_button("⬇️ Tải sổ mua thử (CSV)", csv_p,
+                           file_name=f"so_mua_thu_{datetime.now():%Y%m%d}.csv",
+                           mime="text/csv", use_container_width=True)
+        idx_del = e2.number_input("Xóa lệnh số (1-based)", min_value=0,
+                                  max_value=len(positions), value=0)
+        if e2.button("Xóa lệnh") and idx_del > 0:
+            STORE.remove_position(idx_del - 1)
+            st.rerun()
         st.caption(DISCLAIMER)
 
 with tab_sector:

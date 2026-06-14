@@ -207,3 +207,33 @@ def wait_zone(df, lookback=120):
             best["low"] = round(best["low"] * 0.993, 2)
             best["high"] = round(best["high"] * 1.007, 2)
     return best
+
+
+def pct_changes(df):
+    """Tính % thay đổi giá theo mốc: 1 tuần, 1 tháng, 3 tháng, 6 tháng, YTD.
+    Dựa trên số phiên giao dịch xấp xỉ (5/22/66/132 phiên) + đầu năm.
+    Trả dict {'1W','1M','3M','6M','YTD'} (% làm tròn 1 chữ số) hoặc None."""
+    d = _ohlc(df)
+    if len(d) < 5:
+        return None
+    c = d["close"].reset_index(drop=True)
+    last = float(c.iloc[-1])
+    def chg(n_back):
+        if len(c) > n_back:
+            old = float(c.iloc[-1 - n_back])
+            if old > 0:
+                return round((last - old) / old * 100, 1)
+        return None
+    out = {"1W": chg(5), "1M": chg(22), "3M": chg(66), "6M": chg(132)}
+    # YTD: tìm phiên đầu tiên của năm hiện tại
+    try:
+        t = pd.to_datetime(d["time"])
+        yr = t.iloc[-1].year
+        mask = t.dt.year == yr
+        if mask.any():
+            first_close = float(d.loc[mask, "close"].iloc[0])
+            if first_close > 0:
+                out["YTD"] = round((last - first_close) / first_close * 100, 1)
+    except Exception:
+        out["YTD"] = None
+    return out

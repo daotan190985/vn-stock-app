@@ -113,3 +113,19 @@ def ref_from_history(hist_df):
         return float(closes.iloc[-1])
     except Exception:
         return None
+
+
+def last_price(symbol):
+    """Giá đóng cửa gần nhất (nghìn đồng) từ dchart. None nếu lỗi."""
+    from datetime import datetime, timedelta
+    try:
+        end = datetime.now().strftime("%Y-%m-%d")
+        start = (datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d")
+        df = vnd_history(symbol, start, end)
+        if df is None or df.empty:
+            return None
+        import pandas as pd
+        c = pd.to_numeric(df["close"], errors="coerce").dropna()
+        return round(float(c.iloc[-1]), 2) if len(c) else None
+    except Exception:
+        return None
