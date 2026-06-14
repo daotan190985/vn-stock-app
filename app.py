@@ -20,6 +20,8 @@ import vndirect as VND
 import fundamentals as FUND
 import ecosystem as ECO
 import storage as STORE
+import report as REPORT
+import insights as INS
 
 st.set_page_config(page_title="VN Stock Analyst Desk", layout="wide", page_icon="📊")
 st.markdown("""
@@ -139,13 +141,39 @@ with tab_desk:
         n_vao=(df["status"]=="VAO").sum(); n_cho=(df["status"]=="CHO").sum()
         st.success(f"🟢 {n_vao} mã ĐIỂM VÀO · 🟡 {n_cho} mã CHỜ (tổng {len(df)} mã).")
 
-        # --- Lưu & xuất báo cáo ---
+        # --- TỔNG HỢP & KẾT LUẬN (app tự nhận định) ---
+        concl = INS.market_conclusion(rows, liquidity_value=liq.get("value_ty"),
+                                      threshold=liq_threshold)
+        if concl:
+            with st.container():
+                st.markdown(f"#### 🧭 Kết luận: **{concl['verdict']}**")
+                for l in concl.get("lines", []):
+                    st.write("•", l)
+                st.info("👉 " + concl["action"])
+                seas_idx = INS.seasonality("VNINDEX", years=8)
+                stext = INS.seasonality_text(seas_idx)
+                if stext:
+                    st.caption("📅 Mùa vụ thị trường: " + stext)
+
+        # --- Lưu & xuất báo cáo (1 FILE Excel đủ sheet) ---
         bC1, bC2, bC3 = st.columns(3)
-        csv = view[cols].to_csv(index=False).encode("utf-8-sig")
-        bC1.download_button("⬇️ Tải CSV (mở Excel)", csv,
-                            file_name=f"quet_thi_truong_{datetime.now():%Y%m%d_%H%M}.csv",
-                            mime="text/csv", use_container_width=True)
-        if bC2.button("💾 Lưu phiên quét này", use_container_width=True):
+        try:
+            port_for_report = None
+            pos = STORE.load_portfolio()
+            if pos:
+                pmap = {r["Mã"]: r.get("Giá") for r in rows if r.get("Giá")}
+                port_for_report, _ = STORE.compute_pnl(pos, pmap)
+            xlsx_bytes = REPORT.build_report(rows, meta={"phase": phase, "liq": liq.get("value_ty")},
+                                             portfolio=port_for_report,
+                                             conclusion=concl,
+                                             seasonality=INS.seasonality("VNINDEX", years=8))
+            bC1.download_button("📑 Tải báo cáo Excel (đủ sheet)", xlsx_bytes,
+                file_name=f"bao_cao_{datetime.now():%Y%m%d_%H%M}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True)
+        except Exception as e:
+            bC1.caption(f"(Lỗi tạo báo cáo: {type(e).__name__})")
+        if bC2.button("💾 Lưu phiên quét", use_container_width=True):
             ok = STORE.save_scan(rows, meta={"phase": phase, "liq": liq.get("value_ty")})
             st.toast("Đã lưu phiên quét." if ok else "Lưu thất bại.", icon="✅" if ok else "⚠️")
         saved = STORE.load_scan()
@@ -312,6 +340,13 @@ with tab_detail:
             za = setup.get("zone_alert","")
             prospect.append(f"Vùng canh vào {wz['low']:,.2f}–{wz['high']:,.2f} {za}")
         st.write("• " + " · ".join(prospect) if prospect else "• Chưa đủ dữ liệu.")
+
+        # mùa vụ riêng mã
+        seas_s = INS.seasonality(sym, years=6)
+        stext_s = INS.seasonality_text(seas_s)
+        if stext_s:
+            st.write("• 📅 Mùa vụ mã này: " + stext_s)
+
         st.write(f"• **Kết luận:** {rec_badge(label)} (điểm {sc['total']}/100, tin cậy {conf})",
                  unsafe_allow_html=True)
 
@@ -350,6 +385,35 @@ with tab_movers:
                 st.dataframe(down[show_cols], use_container_width=True, hide_index=True)
         else:
             st.warning("Chưa có dữ liệu mốc này. Quét lại thị trường.")
+
+        # --- MÙA VỤ VN-INDEX ---
+        st.markdown("---")
+        st.markdown("#### 📅 Mùa vụ thị trường (VN-Index) — tháng nào hay tăng/giảm")
+        st.caption("Lợi suất trung bình từng tháng qua 8 năm. Thống kê quá khứ, KHÔNG đảm bảo lặp lại — "
+                   "dùng tham khảo thời điểm vào lệnh, tránh chôn vốn mùa yếu.")
+        seas = INS.seasonality("VNINDEX", years=8)
+        if seas and seas.get("monthly"):
+            import plotly.graph_objects as go
+            months = list(range(1, 13))
+            avgs = [seas["monthly"].get(m, {}).get("avg", 0) for m in months]
+            wins = [seas["monthly"].get(m, {}).get("win_rate", 0) for m in months]
+            colors = ["#26a69a" if a >= 0 else "#ef5350" for a in avgs]
+            figs = go.Figure(go.Bar(x=[INS.VN_MONTHS[m] for m in months], y=avgs,
+                            marker_color=colors,
+                            text=[f"{a:+.1f}%<br>{w}%↑" for a, w in zip(avgs, wins)],
+                            textposition="outside"))
+            figs.update_layout(template="plotly_dark", height=340,
+                title="Lợi suất TB theo tháng (VN-Index, 8 năm)", paper_bgcolor="#0e1117",
+                plot_bgcolor="#0e1117", margin=dict(l=10,r=10,t=40,b=10),
+                yaxis_title="% / tháng")
+            st.plotly_chart(figs, use_container_width=True)
+            if seas.get("best") and seas.get("worst"):
+                bm, bv = seas["best"]; wm, wv = seas["worst"]
+                cS1, cS2 = st.columns(2)
+                cS1.metric(f"📈 Tháng mạnh nhất", INS.VN_MONTHS[bm], f"{bv['avg']:+.1f}% · {bv['win_rate']}% tăng")
+                cS2.metric(f"📉 Tháng yếu nhất", INS.VN_MONTHS[wm], f"{wv['avg']:+.1f}% · {wv['win_rate']}% tăng")
+        else:
+            st.caption("(Chưa tính được mùa vụ — thử quét lại.)")
 
 with tab_port:
     st.subheader("💼 Sổ mua thử (test phương pháp)")
